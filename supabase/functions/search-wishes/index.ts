@@ -46,10 +46,11 @@ Deno.serve(async (req) => {
       return json({ error: "APIFY_API_TOKEN not configured" }, 500);
     }
 
-    // Step 1: Start actor run
+    // Step 1: Start actor run — use startUrls with X search URL for better results
+    const searchUrl = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=top`;
     const startUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/runs?token=${apifyToken}`;
     const inputBody = {
-      searchTerms: [query],
+      startUrls: [searchUrl],
       maxItems,
       sort: "Top",
       tweetLanguage: "en",
