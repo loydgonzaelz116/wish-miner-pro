@@ -194,5 +194,5 @@ export function useSearchWishes() {
     setFromCache(cached);
   };
 
-  return { wishes, setWishes, loading, statusMessage, error, fromCache, hasSearched, search, searchesRemaining, limitReached };
+  return { wishes, setWishes, loading, statusMessage, error, fromCache, hasSearched, search, searchesRemaining, limitReached, isPaid };
 }
