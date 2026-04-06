@@ -1,6 +1,8 @@
-import { Home, Search, Lightbulb, Download, Settings, Pickaxe, TrendingUp } from "lucide-react";
+import { Home, Search, Lightbulb, Download, Settings, Pickaxe, TrendingUp, LogOut } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
