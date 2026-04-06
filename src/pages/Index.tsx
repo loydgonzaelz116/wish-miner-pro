@@ -1,8 +1,2 @@
-const Index = () => {
-  if (typeof window !== "undefined") {
-    window.location.href = "/";
-  }
-  return null;
-};
-
-export default Index;
+import Landing from "./Landing";
+export default Landing;
