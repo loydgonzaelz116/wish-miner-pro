@@ -95,7 +95,19 @@ export function useSearchWishes() {
         body: { query, maxItems: 50 },
       });
 
-      if (fnError) throw new Error(fnError.message);
+      // Handle rate limit (429 comes back as fnError but data may still have limitReached)
+      if (fnError) {
+        // Try to parse the error response for limit info
+        if (data?.limitReached) {
+          setLimitReached(true);
+          setSearchesRemaining(0);
+          setError("You've reached your daily limit of 5 free searches. Upgrade for unlimited mining!");
+          setWishes([]);
+          setLoading(false);
+          return;
+        }
+        throw new Error(fnError.message);
+      }
 
       // Handle rate limit
       if (data.limitReached) {
