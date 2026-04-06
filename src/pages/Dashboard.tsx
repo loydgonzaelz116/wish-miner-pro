@@ -1,14 +1,25 @@
-import { Outlet, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Crown, Star } from "lucide-react";
 import { usePlanTier } from "@/hooks/usePlanTier";
+import { toast } from "sonner";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { tier, isLifetime, isPaid } = usePlanTier();
+
+  useEffect(() => {
+    if (searchParams.get("payment") === "success") {
+      const tierName = searchParams.get("tier");
+      toast.success(`🎉 Welcome to ${tierName === "lifetime" ? "Lifetime" : tierName === "pro" ? "Pro" : "Founder's Pass"}! Your plan is now active.`);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   return (
   <div className="dark">
