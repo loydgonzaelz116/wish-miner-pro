@@ -116,6 +116,27 @@ export type Database = {
         }
         Relationships: []
       }
+      search_usage: {
+        Row: {
+          id: string
+          search_count: number
+          search_date: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          search_count?: number
+          search_date?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          search_count?: number
+          search_date?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       x_posts: {
         Row: {
           author: string | null

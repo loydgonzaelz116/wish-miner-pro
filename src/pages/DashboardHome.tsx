@@ -1,22 +1,25 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import KPICards from "@/components/dashboard/KPICards";
 import SearchBar from "@/components/dashboard/SearchBar";
 import WishCard from "@/components/dashboard/WishCard";
 import { mockWishes } from "@/data/mockWishes";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Info, Loader2 } from "lucide-react";
+import { Info, Loader2, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { saveIdea } from "@/lib/savedIdeas";
 import { toast } from "sonner";
 import { useSearchWishes } from "@/hooks/useSearchWishes";
+import { Button } from "@/components/ui/button";
 
 const DashboardHome = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { wishes: liveWishes, setWishes: setLiveWishes, loading, statusMessage, error, fromCache, hasSearched, search } = useSearchWishes();
+  const {
+    wishes: liveWishes, setWishes: setLiveWishes,
+    loading, statusMessage, error, fromCache, hasSearched, search,
+    searchesRemaining, limitReached,
+  } = useSearchWishes();
 
-  // Show mock wishes before first search, live wishes after
   const displayWishes = hasSearched ? liveWishes : mockWishes.map(w => ({ ...w }));
 
   const toggleSave = async (id: string) => {
@@ -54,7 +57,25 @@ const DashboardHome = () => {
       </div>
 
       <KPICards />
-      <SearchBar onSearch={search} />
+
+      {/* Search usage indicator */}
+      <div className="flex items-center justify-between">
+        <SearchBar onSearch={search} />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">
+          {limitReached
+            ? "🚫 Daily limit reached"
+            : `⛏️ ${searchesRemaining} free searches remaining today`}
+        </span>
+        {limitReached && (
+          <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5">
+            <Zap className="h-3.5 w-3.5" />
+            Upgrade to Pro
+          </Button>
+        )}
+      </div>
 
       {loading && (
         <div className="flex items-center justify-center py-12 gap-3">
@@ -66,7 +87,14 @@ const DashboardHome = () => {
       {error && !loading && (
         <div className="text-center py-8">
           <p className="text-sm text-destructive">{error}</p>
-          <p className="text-xs text-muted-foreground mt-1">The Apify actor couldn't find results. Try a different query or check your Apify account settings.</p>
+          {limitReached ? (
+            <Button size="sm" className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5">
+              <Zap className="h-3.5 w-3.5" />
+              Upgrade for unlimited searches
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">Try a different query or check back later.</p>
+          )}
         </div>
       )}
 
