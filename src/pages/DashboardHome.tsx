@@ -59,7 +59,7 @@ const DashboardHome = () => {
       {loading && (
         <div className="flex items-center justify-center py-12 gap-3">
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          <span className="text-sm text-muted-foreground">Mining real wishes from X… this may take a minute</span>
+          <span className="text-sm text-muted-foreground">{statusMessage || "Mining real wishes from X…"}</span>
         </div>
       )}
 
