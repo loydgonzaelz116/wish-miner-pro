@@ -3,13 +3,27 @@ import { ArrowLeft, Heart, MessageCircle, Repeat2, Bookmark, Share2, Download, E
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { mockWishes } from "@/data/mockWishes";
+import { useAuth } from "@/hooks/useAuth";
+import { saveIdea } from "@/lib/savedIdeas";
+import { toast } from "sonner";
 
 const IdeaDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const wish = mockWishes.find(w => w.id === id);
 
   if (!wish) return <div className="p-8 text-muted-foreground">Idea not found.</div>;
+
+  const handleSave = async () => {
+    if (!user) return;
+    try {
+      await saveIdea(user.id, wish);
+      toast.success("Saved to My Ideas!");
+    } catch {
+      toast.error("Failed to save — may already be saved");
+    }
+  };
 
   const shareText = encodeURIComponent(`🔥 Found a hot product idea on WishMiner:\n\n"${wish.text.slice(0, 100)}..."\n\n${wish.likes.toLocaleString()} likes. Someone should build this!`);
 
@@ -42,7 +56,6 @@ const IdeaDetail = () => {
         </div>
       </div>
 
-      {/* AI Product Suggestion */}
       <div className="bg-card rounded-xl border border-primary/20 p-6 shadow-card mb-6">
         <div className="flex items-center gap-2 mb-3">
           <Sparkles className="h-5 w-5 text-primary" />
@@ -74,9 +87,8 @@ const IdeaDetail = () => {
         )}
       </div>
 
-      {/* Actions */}
       <div className="flex flex-wrap gap-3">
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground">
+        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={handleSave}>
           <Bookmark className="h-4 w-4 mr-2" /> Save to My Ideas
         </Button>
         <Button variant="outline" className="border-border/50" onClick={() => window.open(`https://twitter.com/intent/tweet?text=${shareText}`, '_blank')}>

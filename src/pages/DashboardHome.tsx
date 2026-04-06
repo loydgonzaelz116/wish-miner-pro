@@ -6,20 +6,39 @@ import WishCard from "@/components/dashboard/WishCard";
 import { mockWishes } from "@/data/mockWishes";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Info } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { saveIdea } from "@/lib/savedIdeas";
+import { toast } from "sonner";
 
 const DashboardHome = () => {
   const [wishes, setWishes] = useState(mockWishes);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const toggleSave = (id: string) => {
-    setWishes(prev => prev.map(w => w.id === id ? { ...w, saved: !w.saved } : w));
+  const toggleSave = async (id: string) => {
+    const wish = wishes.find(w => w.id === id);
+    if (!wish || !user) return;
+
+    if (!wish.saved) {
+      try {
+        await saveIdea(user.id, wish);
+        setWishes(prev => prev.map(w => w.id === id ? { ...w, saved: true } : w));
+        toast.success("Idea saved!");
+      } catch {
+        toast.error("Failed to save idea");
+      }
+    } else {
+      setWishes(prev => prev.map(w => w.id === id ? { ...w, saved: false } : w));
+    }
   };
+
+  const displayName = user?.user_metadata?.full_name?.split(" ")[0] || user?.email?.split("@")[0] || "Miner";
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <h1 className="text-2xl font-bold text-foreground">Good morning, Miner</h1>
+          <h1 className="text-2xl font-bold text-foreground">Good morning, {displayName}</h1>
           <Tooltip>
             <TooltipTrigger>
               <Info className="h-4 w-4 text-muted-foreground" />

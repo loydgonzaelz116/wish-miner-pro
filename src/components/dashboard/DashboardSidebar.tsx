@@ -1,6 +1,8 @@
-import { Home, Search, Lightbulb, Download, Settings, Pickaxe, TrendingUp } from "lucide-react";
+import { Home, Search, Lightbulb, Download, Settings, Pickaxe, TrendingUp, LogOut } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -26,6 +28,8 @@ export function DashboardSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
 
   return (
     <Sidebar collapsible="icon">
@@ -76,6 +80,14 @@ export function DashboardSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+
+        <div className="mt-auto p-3">
+          <Button variant="ghost" size="sm" className="w-full justify-start text-muted-foreground hover:text-foreground"
+            onClick={async () => { await signOut(); navigate("/"); }}>
+            <LogOut className="h-4 w-4 mr-2" />
+            {!collapsed && "Sign out"}
+          </Button>
+        </div>
       </SidebarContent>
     </Sidebar>
   );
