@@ -4,8 +4,17 @@ import { useAuth } from "@/hooks/useAuth";
 import { usePlanTier } from "@/hooks/usePlanTier";
 import { fetchSavedIdeas } from "@/lib/savedIdeas";
 import { exportFormattedSummary } from "@/lib/exportSummaryDoc";
+import { exportLandingPageHTML } from "@/lib/exportLandingPage";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 function exportToCSV(ideas: any[]) {
   const headers = [
@@ -48,6 +57,9 @@ const Exports = () => {
   const { user } = useAuth();
   const { isPaid, loading: planLoading } = usePlanTier();
   const navigate = useNavigate();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [ideas, setIdeas] = useState<any[]>([]);
+  const [loadingIdeas, setLoadingIdeas] = useState(false);
 
   const handleExport = async (format: string) => {
     if (!isPaid) {
@@ -59,26 +71,49 @@ const Exports = () => {
 
     if (!user) return;
 
+    if (format === "html") {
+      // Need to pick a single idea
+      try {
+        setLoadingIdeas(true);
+        const data = await fetchSavedIdeas(user.id);
+        if (!data || data.length === 0) {
+          toast.error("No saved ideas to export");
+          return;
+        }
+        setIdeas(data);
+        setPickerOpen(true);
+      } catch {
+        toast.error("Failed to load ideas");
+      } finally {
+        setLoadingIdeas(false);
+      }
+      return;
+    }
+
     if (format === "csv" || format === "doc") {
       try {
-        const ideas = await fetchSavedIdeas(user.id);
-        if (!ideas || ideas.length === 0) {
+        const data = await fetchSavedIdeas(user.id);
+        if (!data || data.length === 0) {
           toast.error("No saved ideas to export");
           return;
         }
         if (format === "csv") {
-          exportToCSV(ideas);
-          toast.success(`Exported ${ideas.length} ideas to CSV`);
+          exportToCSV(data);
+          toast.success(`Exported ${data.length} ideas to CSV`);
         } else {
-          await exportFormattedSummary(ideas);
-          toast.success(`Exported ${ideas.length} ideas to DOCX`);
+          await exportFormattedSummary(data);
+          toast.success(`Exported ${data.length} ideas to DOCX`);
         }
       } catch {
         toast.error("Failed to export ideas");
       }
-    } else {
-      toast.info("Coming soon!");
     }
+  };
+
+  const handlePickIdea = (idea: any) => {
+    setPickerOpen(false);
+    exportLandingPageHTML(idea);
+    toast.success(`Landing page exported for "${idea.ai_product_name || "Untitled"}"`);
   };
 
   return (
@@ -123,12 +158,38 @@ const Exports = () => {
               size="sm"
               className="border-border/50"
               onClick={() => handleExport(opt.format)}
+              disabled={loadingIdeas}
             >
               {isPaid ? "Export" : <><Lock className="h-3 w-3 mr-1" /> Export</>}
             </Button>
           </div>
         ))}
       </div>
+
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-w-md max-h-[70vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Choose an idea</DialogTitle>
+            <DialogDescription>Select an idea to generate a landing page for</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 mt-2">
+            {ideas.map((idea) => (
+              <button
+                key={idea.id}
+                onClick={() => handlePickIdea(idea)}
+                className="w-full text-left p-3 rounded-lg border border-border/50 hover:border-primary/40 hover:bg-primary/5 transition-colors"
+              >
+                <p className="font-medium text-sm text-foreground truncate">
+                  {idea.ai_product_name || "Untitled Idea"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                  {idea.wish_text}
+                </p>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
