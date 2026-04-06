@@ -146,8 +146,29 @@ async function handleCheckUsage(req: Request) {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
+  const isPaid = await isUserPaid(supabase, userId);
+  if (isPaid) {
+    return json({ searchesRemaining: 999, limit: FREE_TIER_LIMIT, isPaid: true });
+  }
   const remaining = await getRemainingSearches(supabase, userId);
-  return json({ searchesRemaining: remaining, limit: FREE_TIER_LIMIT });
+  return json({ searchesRemaining: remaining, limit: FREE_TIER_LIMIT, isPaid: false });
+}
+
+async function isUserPaid(supabase: any, userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("plan_tier, plan_expires_at")
+    .eq("user_id", userId)
+    .single();
+
+  if (!data || data.plan_tier === "free") return false;
+
+  // Check if founder pass expired
+  if (data.plan_tier === "founder" && data.plan_expires_at) {
+    return new Date(data.plan_expires_at) > new Date();
+  }
+
+  return true; // pro or lifetime
 }
 
 async function getUserId(req: Request): Promise<string | null> {
