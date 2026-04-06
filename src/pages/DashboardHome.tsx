@@ -17,7 +17,7 @@ const DashboardHome = () => {
   const {
     wishes: liveWishes, setWishes: setLiveWishes,
     loading, statusMessage, error, fromCache, hasSearched, search,
-    searchesRemaining, limitReached,
+    searchesRemaining, limitReached, isPaid,
   } = useSearchWishes();
 
   const displayWishes = hasSearched ? liveWishes : mockWishes.map(w => ({ ...w }));
@@ -65,12 +65,15 @@ const DashboardHome = () => {
 
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">
-          {limitReached
-            ? "🚫 Daily limit reached"
-            : `⛏️ ${searchesRemaining} free searches remaining today`}
+          {isPaid
+            ? "⛏️ Unlimited searches"
+            : limitReached
+              ? "🚫 Daily limit reached"
+              : `⛏️ ${searchesRemaining} free searches remaining today`}
         </span>
-        {limitReached && (
-          <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5">
+        {!isPaid && limitReached && (
+          <Button size="sm" className="bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5"
+            onClick={() => navigate("/pricing")}>
             <Zap className="h-3.5 w-3.5" />
             Upgrade to Pro
           </Button>

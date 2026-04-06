@@ -61,6 +61,7 @@ export function useSearchWishes() {
   const [hasSearched, setHasSearched] = useState(false);
   const [searchesRemaining, setSearchesRemaining] = useState<number>(5);
   const [limitReached, setLimitReached] = useState(false);
+  const [isPaid, setIsPaid] = useState(false);
 
   // Fetch usage on mount
   useEffect(() => {
@@ -74,7 +75,12 @@ export function useSearchWishes() {
       });
       if (data?.searchesRemaining !== undefined) {
         setSearchesRemaining(data.searchesRemaining);
-        setLimitReached(data.searchesRemaining <= 0);
+        if (data.isPaid) {
+          setIsPaid(true);
+          setLimitReached(false);
+        } else {
+          setLimitReached(data.searchesRemaining <= 0);
+        }
       }
     } catch {
       // Ignore — default to 5
@@ -83,7 +89,7 @@ export function useSearchWishes() {
 
   const search = useCallback(async (query: string) => {
     if (!query.trim()) return;
-    if (limitReached) return;
+    if (limitReached && !isPaid) return;
 
     setLoading(true);
     setError(null);
@@ -188,5 +194,5 @@ export function useSearchWishes() {
     setFromCache(cached);
   };
 
-  return { wishes, setWishes, loading, statusMessage, error, fromCache, hasSearched, search, searchesRemaining, limitReached };
+  return { wishes, setWishes, loading, statusMessage, error, fromCache, hasSearched, search, searchesRemaining, limitReached, isPaid };
 }
