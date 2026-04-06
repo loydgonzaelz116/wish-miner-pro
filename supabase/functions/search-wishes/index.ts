@@ -50,11 +50,10 @@ Deno.serve(async (req) => {
       return await pollAndFetch(apifyToken, body.runId, body.datasetId, supabase, queryHash, maxItems);
     }
 
-    // Step 1: Start actor run (don't wait)
-    const searchUrl = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=top`;
+    // Step 1: Start actor run
     const startUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/runs?token=${apifyToken}`;
     const inputBody = {
-      startUrls: [searchUrl],
+      searchTerms: [query],
       maxItems,
       sort: "Top",
       tweetLanguage: "en",
