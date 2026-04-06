@@ -93,6 +93,7 @@ Deno.serve(async (req) => {
       }
       const pollData = await pollRes.json();
       status = pollData?.data?.status;
+      console.log(`Poll attempt ${attempts}: status=${status}`);
     }
 
     if (status !== "SUCCEEDED") {
