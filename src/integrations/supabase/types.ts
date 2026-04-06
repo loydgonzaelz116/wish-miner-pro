@@ -116,6 +116,45 @@ export type Database = {
         }
         Relationships: []
       }
+      x_posts: {
+        Row: {
+          author: string | null
+          fetched_at: string
+          id: string
+          like_count: number | null
+          post_text: string
+          post_timestamp: string | null
+          query_hash: string
+          quote_count: number | null
+          raw_data: Json | null
+          reply_count: number | null
+        }
+        Insert: {
+          author?: string | null
+          fetched_at?: string
+          id?: string
+          like_count?: number | null
+          post_text: string
+          post_timestamp?: string | null
+          query_hash: string
+          quote_count?: number | null
+          raw_data?: Json | null
+          reply_count?: number | null
+        }
+        Update: {
+          author?: string | null
+          fetched_at?: string
+          id?: string
+          like_count?: number | null
+          post_text?: string
+          post_timestamp?: string | null
+          query_hash?: string
+          quote_count?: number | null
+          raw_data?: Json | null
+          reply_count?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
