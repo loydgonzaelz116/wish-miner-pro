@@ -313,13 +313,17 @@ function json(data: any, status = 200) {
 }
 
 function formatPost(row: any) {
+  const tweetId = row.raw_data?.id || row.raw_data?.id_str || null;
+  const tweetUrl = row.raw_data?.url || (tweetId ? `https://x.com/i/web/status/${tweetId}` : null);
   return {
+    id: row.id,
     text: row.post_text,
     author: row.author,
     likeCount: row.like_count,
     replyCount: row.reply_count,
     quoteCount: row.quote_count,
     timestamp: row.post_timestamp,
+    tweetUrl,
   };
 }
 

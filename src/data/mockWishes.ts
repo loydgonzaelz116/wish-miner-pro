@@ -14,6 +14,7 @@ export interface Wish {
   aiDescription?: string;
   competitorGaps?: string[];
   saved?: boolean;
+  tweetUrl?: string;
 }
 
 export const mockWishes: Wish[] = [

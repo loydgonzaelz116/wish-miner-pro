@@ -3,12 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Wish } from "@/data/mockWishes";
 
 interface RawPost {
+  id?: string;
   text: string;
   author: string;
   likeCount: number;
   replyCount: number;
   quoteCount: number;
   timestamp: string | null;
+  tweetUrl?: string | null;
 }
 
 const POLL_INTERVAL = 5000;
@@ -37,7 +39,7 @@ function classifyDemand(likes: number): "high" | "medium" | "low" {
 
 function toWish(post: RawPost, index: number): Wish {
   return {
-    id: `live-${index}-${Date.now()}`,
+    id: post.id || `live-${index}-${Date.now()}`,
     text: post.text,
     author: post.author || "Unknown",
     handle: `@${post.author || "user"}`,
@@ -49,6 +51,7 @@ function toWish(post: RawPost, index: number): Wish {
     demandLevel: classifyDemand(post.likeCount),
     quoteSuggestions: [],
     saved: false,
+    tweetUrl: post.tweetUrl || undefined,
   };
 }
 
@@ -63,7 +66,6 @@ export function useSearchWishes() {
   const [limitReached, setLimitReached] = useState(false);
   const [isPaid, setIsPaid] = useState(false);
 
-  // Fetch usage on mount
   useEffect(() => {
     checkUsage();
   }, []);
@@ -83,7 +85,7 @@ export function useSearchWishes() {
         }
       }
     } catch {
-      // Ignore — default to 5
+      // Ignore
     }
   };
 
@@ -101,9 +103,7 @@ export function useSearchWishes() {
         body: { query, maxItems: 50 },
       });
 
-      // Handle rate limit (429 comes back as fnError but data may still have limitReached)
       if (fnError) {
-        // Try to parse the error response for limit info
         if (data?.limitReached) {
           setLimitReached(true);
           setSearchesRemaining(0);
@@ -115,7 +115,6 @@ export function useSearchWishes() {
         throw new Error(fnError.message);
       }
 
-      // Handle rate limit
       if (data.limitReached) {
         setLimitReached(true);
         setSearchesRemaining(0);
