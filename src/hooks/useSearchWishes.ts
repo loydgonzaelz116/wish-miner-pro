@@ -11,12 +11,8 @@ interface RawPost {
   timestamp: string | null;
 }
 
-interface SearchResult {
-  posts: RawPost[];
-  fromCache: boolean;
-  stale?: boolean;
-  error?: string;
-}
+const POLL_INTERVAL = 5000;
+const MAX_POLLS = 36; // 3 minutes
 
 const clusters = ["AI Tools", "Freelance Finance", "Parenting Tech", "Meal Prep", "No-Code Tools", "Fitness Tech", "Fashion Tech", "Productivity"];
 
@@ -59,6 +55,7 @@ function toWish(post: RawPost, index: number): Wish {
 export function useSearchWishes() {
   const [wishes, setWishes] = useState<Wish[]>([]);
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -68,37 +65,83 @@ export function useSearchWishes() {
     setLoading(true);
     setError(null);
     setHasSearched(true);
+    setStatusMessage("Starting search…");
 
     try {
+      // Initial call — starts the run or returns cached data
       const { data, error: fnError } = await supabase.functions.invoke("search-wishes", {
         body: { query, maxItems: 50 },
       });
 
-      if (fnError) {
-        throw new Error(fnError.message);
-      }
+      if (fnError) throw new Error(fnError.message);
 
-      const result = data as SearchResult;
-
-      if (result.error && (!result.posts || result.posts.length === 0)) {
-        setError(result.error);
-        setWishes([]);
+      // If we got posts directly (cached), we're done
+      if (data.posts && data.posts.length > 0) {
+        finishWithPosts(data.posts, data.fromCache);
         return;
       }
 
-      const mapped = (result.posts || [])
-        .filter((p: RawPost) => p.text && p.text.length > 10)
-        .map((p: RawPost, i: number) => toWish(p, i));
+      // If run started, poll for results
+      if (data.status === "running" && data.runId && data.datasetId) {
+        setStatusMessage("Mining X posts… this takes 1-2 minutes");
+        await pollForResults(query, data.runId, data.datasetId);
+        return;
+      }
 
-      setWishes(mapped);
-      setFromCache(result.fromCache || false);
+      // Error or no results
+      if (data.error) {
+        setError(data.error);
+      }
+      setWishes([]);
     } catch (err: any) {
       console.error("Search error:", err);
       setError(err.message || "Search failed");
     } finally {
       setLoading(false);
+      setStatusMessage("");
     }
   }, []);
 
-  return { wishes, setWishes, loading, error, fromCache, hasSearched, search };
+  const pollForResults = async (query: string, runId: string, datasetId: string) => {
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL));
+      setStatusMessage(`Mining X posts… (${Math.round((i + 1) * POLL_INTERVAL / 1000)}s)`);
+
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke("search-wishes", {
+          body: { query, action: "poll", runId, datasetId },
+        });
+
+        if (fnError) throw new Error(fnError.message);
+
+        if (data.status === "running") continue;
+
+        if (data.posts && data.posts.length > 0) {
+          finishWithPosts(data.posts, data.fromCache);
+          return;
+        }
+
+        if (data.error) {
+          setError(data.error);
+          setWishes([]);
+          return;
+        }
+      } catch (err: any) {
+        console.error("Poll error:", err);
+      }
+    }
+
+    setError("Search timed out. Try again later.");
+    setWishes([]);
+  };
+
+  const finishWithPosts = (posts: RawPost[], cached: boolean) => {
+    const mapped = posts
+      .filter((p: RawPost) => p.text && p.text.length > 10)
+      .map((p: RawPost, i: number) => toWish(p, i));
+    setWishes(mapped);
+    setFromCache(cached);
+  };
+
+  return { wishes, setWishes, loading, statusMessage, error, fromCache, hasSearched, search };
 }
