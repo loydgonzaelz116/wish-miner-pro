@@ -5,7 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const APIFY_ACTOR_ID = "61RPP7dywgiy0JPD0";
+const APIFY_ACTOR_ID = "CJdippxWmn9uRfooo";
 const CACHE_HOURS = 24;
 
 Deno.serve(async (req) => {
