@@ -7,6 +7,8 @@ const corsHeaders = {
 
 const APIFY_ACTOR_ID = "61RPP7dywgiy0JPD0";
 const CACHE_HOURS = 24;
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_ATTEMPTS = 60; // 3 minutes max
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -16,10 +18,7 @@ Deno.serve(async (req) => {
   try {
     const { query, maxItems = 50 } = await req.json();
     if (!query || typeof query !== "string") {
-      return new Response(JSON.stringify({ error: "query is required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "query is required" }, 400);
     }
 
     const queryHash = await hashQuery(query);
@@ -29,7 +28,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Check cache
+    // Check cache (24h)
     const cacheThreshold = new Date(Date.now() - CACHE_HOURS * 60 * 60 * 1000).toISOString();
     const { data: cached } = await supabase
       .from("x_posts")
@@ -42,53 +41,95 @@ Deno.serve(async (req) => {
       return json({ posts: cached.map(formatPost), fromCache: true });
     }
 
-    // Call Apify
     const apifyToken = Deno.env.get("APIFY_API_TOKEN");
     if (!apifyToken) {
       return json({ error: "APIFY_API_TOKEN not configured" }, 500);
     }
 
-    const runUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items?token=${apifyToken}`;
-
-    const apifyResponse = await fetch(runUrl, {
+    // Step 1: Start actor run
+    const startUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/runs?token=${apifyToken}`;
+    const startRes = await fetch(startUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         searchTerms: [query],
+        maxItems,
         sort: "Top",
         tweetLanguage: "en",
-        maxItems,
       }),
     });
 
-    if (!apifyResponse.ok) {
-      const errText = await apifyResponse.text();
-      console.error("Apify error:", errText);
+    if (!startRes.ok) {
+      const errText = await startRes.text();
+      console.error("Apify start error:", errText);
       return await fallbackToStale(supabase, queryHash, maxItems, errText);
     }
 
-    const tweets = await apifyResponse.json();
+    const runData = await startRes.json();
+    const runId = runData?.data?.id;
+    const datasetId = runData?.data?.defaultDatasetId;
 
-    // Filter out noResults entries and map fields
-    const validTweets = (tweets as any[]).filter((t: any) => !t.noResults && (t.full_text || t.text));
-
-    if (validTweets.length === 0) {
-      // No real results — try stale cache
-      return await fallbackToStale(supabase, queryHash, maxItems, "No results from Apify");
+    if (!runId) {
+      console.error("No run ID returned:", JSON.stringify(runData));
+      return await fallbackToStale(supabase, queryHash, maxItems, "No run ID");
     }
 
-    // Clear old cache
+    // Step 2: Poll until finished
+    let status = runData?.data?.status;
+    let attempts = 0;
+
+    while (status !== "SUCCEEDED" && status !== "FAILED" && status !== "ABORTED" && status !== "TIMED-OUT" && attempts < MAX_POLL_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+      attempts++;
+
+      const pollRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`);
+      if (!pollRes.ok) {
+        const t = await pollRes.text();
+        console.error("Poll error:", t);
+        continue;
+      }
+      const pollData = await pollRes.json();
+      status = pollData?.data?.status;
+    }
+
+    if (status !== "SUCCEEDED") {
+      console.error(`Actor run ended with status: ${status}`);
+      return await fallbackToStale(supabase, queryHash, maxItems, `Run status: ${status}`);
+    }
+
+    // Step 3: Fetch dataset items
+    const datasetUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}&format=json`;
+    const datasetRes = await fetch(datasetUrl);
+    if (!datasetRes.ok) {
+      const errText = await datasetRes.text();
+      console.error("Dataset fetch error:", errText);
+      return await fallbackToStale(supabase, queryHash, maxItems, errText);
+    }
+
+    const tweets = await datasetRes.json();
+    const validTweets = (tweets as any[]).filter((t: any) => !t.noResults && (t.full_text || t.text || t.tweetText));
+
+    if (validTweets.length === 0) {
+      console.log("No valid tweets found, raw count:", tweets.length);
+      if (tweets.length > 0) {
+        console.log("Sample raw item keys:", Object.keys(tweets[0]).join(", "));
+        console.log("Sample raw item:", JSON.stringify(tweets[0]).substring(0, 500));
+      }
+      return await fallbackToStale(supabase, queryHash, maxItems, "No valid tweets in results");
+    }
+
+    // Clear old cache for this query
     await supabase.from("x_posts").delete().eq("query_hash", queryHash);
 
-    // Map Apify tweet fields to our schema
+    // Map fields — handle various Apify actor output schemas
     const rows = validTweets.map((t: any) => ({
       query_hash: queryHash,
-      post_text: t.full_text || t.text || "",
-      author: t.user?.screen_name || t.author?.userName || t.author?.name || "",
-      like_count: t.favorite_count ?? t.likeCount ?? t.favoriteCount ?? 0,
-      reply_count: t.reply_count ?? t.replyCount ?? 0,
-      quote_count: t.quote_count ?? t.quoteCount ?? 0,
-      post_timestamp: t.created_at || t.createdAt || t.timestamp || null,
+      post_text: t.full_text || t.text || t.tweetText || "",
+      author: t.user?.screen_name || t.author?.userName || t.screen_name || t.userName || "",
+      like_count: t.favorite_count ?? t.likeCount ?? t.favoriteCount ?? t.likes ?? 0,
+      reply_count: t.reply_count ?? t.replyCount ?? t.replies ?? 0,
+      quote_count: t.quote_count ?? t.quoteCount ?? t.quotes ?? 0,
+      post_timestamp: t.created_at || t.createdAt || t.timestamp || t.date || null,
       raw_data: t,
     }));
 
@@ -114,7 +155,7 @@ async function fallbackToStale(supabase: any, queryHash: string, maxItems: numbe
   if (stale && stale.length > 0) {
     return json({ posts: stale.map(formatPost), fromCache: true, stale: true });
   }
-  return json({ error: "No results found", details: reason, posts: [] }, 200);
+  return json({ error: "No results found", details: reason, posts: [] });
 }
 
 function json(data: any, status = 200) {
