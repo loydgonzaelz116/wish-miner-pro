@@ -14,22 +14,20 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { query, maxItems = 50 } = await req.json();
+    const body = await req.json();
+    const { query, maxItems = 50, action } = body;
+
     if (!query || typeof query !== "string") {
-      return new Response(JSON.stringify({ error: "query is required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "query is required" }, 400);
     }
 
     const queryHash = await hashQuery(query);
-
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Check cache
+    // Check cache (24h)
     const cacheThreshold = new Date(Date.now() - CACHE_HOURS * 60 * 60 * 1000).toISOString();
     const { data: cached } = await supabase
       .from("x_posts")
@@ -42,66 +40,131 @@ Deno.serve(async (req) => {
       return json({ posts: cached.map(formatPost), fromCache: true });
     }
 
-    // Call Apify
     const apifyToken = Deno.env.get("APIFY_API_TOKEN");
     if (!apifyToken) {
       return json({ error: "APIFY_API_TOKEN not configured" }, 500);
     }
 
-    const runUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items?token=${apifyToken}`;
+    // action=poll means check an existing run
+    if (action === "poll" && body.runId && body.datasetId) {
+      return await pollAndFetch(apifyToken, body.runId, body.datasetId, supabase, queryHash, maxItems);
+    }
 
-    const apifyResponse = await fetch(runUrl, {
+    // Step 1: Start actor run
+    const startUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/runs?token=${apifyToken}`;
+    const inputBody = {
+      searchTerms: [query],
+      maxItems,
+      sort: "Top",
+      tweetLanguage: "en",
+    };
+    console.log("Starting Apify run with input:", JSON.stringify(inputBody));
+    
+    const startRes = await fetch(startUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        searchTerms: [query],
-        sort: "Top",
-        tweetLanguage: "en",
-        maxItems,
-      }),
+      body: JSON.stringify(inputBody),
     });
 
-    if (!apifyResponse.ok) {
-      const errText = await apifyResponse.text();
-      console.error("Apify error:", errText);
+    if (!startRes.ok) {
+      const errText = await startRes.text();
+      console.error("Apify start error:", startRes.status, errText);
       return await fallbackToStale(supabase, queryHash, maxItems, errText);
     }
 
-    const tweets = await apifyResponse.json();
+    const runData = await startRes.json();
+    const runId = runData?.data?.id;
+    const datasetId = runData?.data?.defaultDatasetId;
+    console.log("Run started:", runId, "dataset:", datasetId, "status:", runData?.data?.status);
 
-    // Filter out noResults entries and map fields
-    const validTweets = (tweets as any[]).filter((t: any) => !t.noResults && (t.full_text || t.text));
-
-    if (validTweets.length === 0) {
-      // No real results — try stale cache
-      return await fallbackToStale(supabase, queryHash, maxItems, "No results from Apify");
+    if (!runId) {
+      return await fallbackToStale(supabase, queryHash, maxItems, "No run ID");
     }
 
-    // Clear old cache
-    await supabase.from("x_posts").delete().eq("query_hash", queryHash);
+    // Return runId so client can poll
+    return json({ 
+      status: "running",
+      runId,
+      datasetId,
+      message: "Actor run started. Poll with action='poll' to check results."
+    });
 
-    // Map Apify tweet fields to our schema
-    const rows = validTweets.map((t: any) => ({
-      query_hash: queryHash,
-      post_text: t.full_text || t.text || "",
-      author: t.user?.screen_name || t.author?.userName || t.author?.name || "",
-      like_count: t.favorite_count ?? t.likeCount ?? t.favoriteCount ?? 0,
-      reply_count: t.reply_count ?? t.replyCount ?? 0,
-      quote_count: t.quote_count ?? t.quoteCount ?? 0,
-      post_timestamp: t.created_at || t.createdAt || t.timestamp || null,
-      raw_data: t,
-    }));
-
-    if (rows.length > 0) {
-      await supabase.from("x_posts").insert(rows);
-    }
-
-    return json({ posts: rows.map(formatPost), fromCache: false });
   } catch (err) {
     console.error("search-wishes error:", err);
     return json({ error: "Internal server error" }, 500);
   }
 });
+
+async function pollAndFetch(
+  apifyToken: string,
+  runId: string,
+  datasetId: string,
+  supabase: any,
+  queryHash: string,
+  maxItems: number
+) {
+  // Check run status
+  const pollRes = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${apifyToken}`);
+  if (!pollRes.ok) {
+    const t = await pollRes.text();
+    console.error("Poll error:", t);
+    return json({ status: "error", error: t }, 502);
+  }
+  const pollData = await pollRes.json();
+  const status = pollData?.data?.status;
+  console.log("Poll status:", status);
+
+  if (status === "RUNNING" || status === "READY") {
+    return json({ status: "running", runId, datasetId });
+  }
+
+  if (status !== "SUCCEEDED") {
+    console.error("Run failed:", status);
+    return await fallbackToStale(supabase, queryHash, maxItems, `Run status: ${status}`);
+  }
+
+  // Fetch dataset items
+  const datasetUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apifyToken}&format=json`;
+  const datasetRes = await fetch(datasetUrl);
+  if (!datasetRes.ok) {
+    const errText = await datasetRes.text();
+    console.error("Dataset fetch error:", errText);
+    return await fallbackToStale(supabase, queryHash, maxItems, errText);
+  }
+
+  const tweets = await datasetRes.json();
+  console.log("Dataset items count:", tweets.length);
+  if (tweets.length > 0) {
+    console.log("Sample keys:", Object.keys(tweets[0]).join(", "));
+    console.log("Sample item:", JSON.stringify(tweets[0]).substring(0, 1000));
+  }
+
+  const validTweets = (tweets as any[]).filter((t: any) => !t.noResults && (t.full_text || t.text || t.tweetText));
+
+  if (validTweets.length === 0) {
+    return await fallbackToStale(supabase, queryHash, maxItems, "No valid tweets in dataset");
+  }
+
+  // Clear old cache
+  await supabase.from("x_posts").delete().eq("query_hash", queryHash);
+
+  const rows = validTweets.map((t: any) => ({
+    query_hash: queryHash,
+    post_text: t.full_text || t.text || t.tweetText || "",
+    author: t.user?.screen_name || t.author?.userName || t.screen_name || t.userName || "",
+    like_count: t.favorite_count ?? t.likeCount ?? t.favoriteCount ?? t.likes ?? 0,
+    reply_count: t.reply_count ?? t.replyCount ?? t.replies ?? 0,
+    quote_count: t.quote_count ?? t.quoteCount ?? t.quotes ?? 0,
+    post_timestamp: t.created_at || t.createdAt || t.timestamp || t.date || null,
+    raw_data: t,
+  }));
+
+  if (rows.length > 0) {
+    await supabase.from("x_posts").insert(rows);
+  }
+
+  return json({ posts: rows.map(formatPost), fromCache: false });
+}
 
 async function fallbackToStale(supabase: any, queryHash: string, maxItems: number, reason: string) {
   const { data: stale } = await supabase
@@ -114,7 +177,7 @@ async function fallbackToStale(supabase: any, queryHash: string, maxItems: numbe
   if (stale && stale.length > 0) {
     return json({ posts: stale.map(formatPost), fromCache: true, stale: true });
   }
-  return json({ error: "No results found", details: reason, posts: [] }, 200);
+  return json({ error: "No results found", details: reason, posts: [] });
 }
 
 function json(data: any, status = 200) {

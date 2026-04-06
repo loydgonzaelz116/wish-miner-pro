@@ -5,30 +5,32 @@ import SearchBar from "@/components/dashboard/SearchBar";
 import WishCard from "@/components/dashboard/WishCard";
 import { mockWishes } from "@/data/mockWishes";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Info } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { saveIdea } from "@/lib/savedIdeas";
 import { toast } from "sonner";
+import { useSearchWishes } from "@/hooks/useSearchWishes";
 
 const DashboardHome = () => {
-  const [wishes, setWishes] = useState(mockWishes);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { wishes: liveWishes, setWishes: setLiveWishes, loading, statusMessage, error, fromCache, hasSearched, search } = useSearchWishes();
+
+  // Show mock wishes before first search, live wishes after
+  const displayWishes = hasSearched ? liveWishes : mockWishes.map(w => ({ ...w }));
 
   const toggleSave = async (id: string) => {
-    const wish = wishes.find(w => w.id === id);
+    const wish = displayWishes.find(w => w.id === id);
     if (!wish || !user) return;
 
-    if (!wish.saved) {
-      try {
-        await saveIdea(user.id, wish);
-        setWishes(prev => prev.map(w => w.id === id ? { ...w, saved: true } : w));
-        toast.success("Idea saved!");
-      } catch {
-        toast.error("Failed to save idea");
+    try {
+      await saveIdea(user.id, wish);
+      if (hasSearched) {
+        setLiveWishes(prev => prev.map(w => w.id === id ? { ...w, saved: true } : w));
       }
-    } else {
-      setWishes(prev => prev.map(w => w.id === id ? { ...w, saved: false } : w));
+      toast.success("Idea saved!");
+    } catch {
+      toast.error("Failed to save idea");
     }
   };
 
@@ -52,21 +54,49 @@ const DashboardHome = () => {
       </div>
 
       <KPICards />
-      <SearchBar />
+      <SearchBar onSearch={search} />
 
-      <div>
-        <h2 className="text-lg font-semibold text-foreground mb-4">Latest Validated Wishes</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {wishes.map(wish => (
-            <WishCard
-              key={wish.id}
-              wish={wish}
-              onSave={toggleSave}
-              onViewDetail={(id) => navigate(`/dashboard/idea/${id}`)}
-            />
-          ))}
+      {loading && (
+        <div className="flex items-center justify-center py-12 gap-3">
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">{statusMessage || "Mining real wishes from X…"}</span>
         </div>
-      </div>
+      )}
+
+      {error && !loading && (
+        <div className="text-center py-8">
+          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-xs text-muted-foreground mt-1">Showing mock data below</p>
+        </div>
+      )}
+
+      {!loading && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-foreground">
+              {hasSearched ? "Live Wishes from X" : "Latest Validated Wishes"}
+            </h2>
+            {hasSearched && (
+              <span className="text-xs text-muted-foreground">
+                {fromCache ? "📦 Cached results" : "🔴 Live from X"} • Powered by Apify
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {displayWishes.map(wish => (
+              <WishCard
+                key={wish.id}
+                wish={wish}
+                onSave={toggleSave}
+                onViewDetail={(id) => navigate(`/dashboard/idea/${id}`)}
+              />
+            ))}
+          </div>
+          {hasSearched && displayWishes.length === 0 && !error && (
+            <p className="text-center text-sm text-muted-foreground py-8">No wishes found for this search. Try different keywords.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 };
