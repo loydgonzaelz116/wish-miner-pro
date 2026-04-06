@@ -26,6 +26,13 @@ interface IdeaData {
   tweetUrl?: string;
 }
 
+interface AiProduct {
+  productName: string;
+  description: string;
+  features: string[];
+  competitorGaps: string[];
+}
+
 const clusters = ["AI Tools", "Freelance Finance", "Parenting Tech", "Meal Prep", "No-Code Tools", "Fitness Tech", "Fashion Tech", "Productivity"];
 
 function classifyCluster(text: string): string {
@@ -54,6 +61,8 @@ const IdeaDetail = () => {
   const [idea, setIdea] = useState<IdeaData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [aiProduct, setAiProduct] = useState<AiProduct | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -102,7 +111,7 @@ const IdeaDetail = () => {
         .maybeSingle();
 
       if (savedIdea) {
-        setIdea({
+        const ideaData: IdeaData = {
           id: savedIdea.id,
           text: savedIdea.wish_text,
           author: savedIdea.author || "Unknown",
@@ -117,7 +126,17 @@ const IdeaDetail = () => {
           aiDescription: savedIdea.ai_description || undefined,
           quoteSuggestions: savedIdea.quote_suggestions || [],
           competitorGaps: savedIdea.competitor_gaps || undefined,
-        });
+        };
+        setIdea(ideaData);
+        // Pre-populate AI product if already saved
+        if (savedIdea.ai_product_name) {
+          setAiProduct({
+            productName: savedIdea.ai_product_name,
+            description: savedIdea.ai_description || "",
+            features: savedIdea.quote_suggestions || [],
+            competitorGaps: savedIdea.competitor_gaps || [],
+          });
+        }
         setLoading(false);
         return;
       }
@@ -128,6 +147,42 @@ const IdeaDetail = () => {
       setNotFound(true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateAiProduct = async () => {
+    if (!idea) return;
+    setAiLoading(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-product-idea", {
+        body: {
+          tweetText: idea.text,
+          author: idea.author,
+          likes: idea.likes,
+          replies: idea.replies,
+          cluster: idea.cluster,
+        },
+      });
+
+      if (error) {
+        const errorMsg = data?.error || error.message || "AI generation failed";
+        toast.error(errorMsg);
+        return;
+      }
+
+      if (data?.error) {
+        toast.error(data.error);
+        return;
+      }
+
+      setAiProduct(data as AiProduct);
+      toast.success("AI product idea generated!");
+    } catch (err) {
+      console.error("AI generation error:", err);
+      toast.error("Failed to generate product idea");
+    } finally {
+      setAiLoading(false);
     }
   };
 
@@ -145,10 +200,10 @@ const IdeaDetail = () => {
         date: idea.date,
         cluster: idea.cluster,
         demandLevel: idea.demandLevel as "high" | "medium" | "low",
-        quoteSuggestions: idea.quoteSuggestions,
-        aiProductName: idea.aiProductName,
-        aiDescription: idea.aiDescription,
-        competitorGaps: idea.competitorGaps,
+        quoteSuggestions: aiProduct?.features || idea.quoteSuggestions,
+        aiProductName: aiProduct?.productName || idea.aiProductName,
+        aiDescription: aiProduct?.description || idea.aiDescription,
+        competitorGaps: aiProduct?.competitorGaps || idea.competitorGaps,
         saved: false,
       });
       toast.success("Saved to My Ideas!");
@@ -213,36 +268,34 @@ const IdeaDetail = () => {
         </div>
       </div>
 
-      {/* AI-suggested product (if available) */}
-      {idea.aiProductName && (
+      {/* AI Product Section */}
+      {aiProduct ? (
         <div className="bg-card rounded-xl border border-primary/20 p-6 shadow-card mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles className="h-5 w-5 text-primary" />
             <h3 className="font-semibold text-card-foreground">AI-Suggested Product</h3>
           </div>
-          <p className="text-xl font-bold text-primary mb-2">{idea.aiProductName}</p>
-          {idea.aiDescription && (
-            <p className="text-sm text-muted-foreground leading-relaxed mb-4">{idea.aiDescription}</p>
-          )}
+          <p className="text-xl font-bold text-primary mb-2">{aiProduct.productName}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed mb-4">{aiProduct.description}</p>
 
-          {idea.quoteSuggestions.length > 0 && (
+          {aiProduct.features.length > 0 && (
             <>
-              <h4 className="text-sm font-semibold text-card-foreground mb-2">Feature List (from replies)</h4>
+              <h4 className="text-sm font-semibold text-card-foreground mb-2">Core Features</h4>
               <ul className="space-y-2 mb-6">
-                {idea.quoteSuggestions.map((s, i) => (
+                {aiProduct.features.map((f, i) => (
                   <li key={i} className="text-sm text-card-foreground flex items-start gap-2">
-                    <span className="text-primary font-bold mt-0.5">✓</span> {s}
+                    <span className="text-primary font-bold mt-0.5">✓</span> {f}
                   </li>
                 ))}
               </ul>
             </>
           )}
 
-          {idea.competitorGaps && idea.competitorGaps.length > 0 && (
+          {aiProduct.competitorGaps.length > 0 && (
             <>
               <h4 className="text-sm font-semibold text-card-foreground mb-2">Competitor Gaps</h4>
               <ul className="space-y-1.5">
-                {idea.competitorGaps.map((g, i) => (
+                {aiProduct.competitorGaps.map((g, i) => (
                   <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
                     <span className="text-warning">⚠</span> {g}
                   </li>
@@ -250,6 +303,30 @@ const IdeaDetail = () => {
               </ul>
             </>
           )}
+
+          <Button variant="outline" size="sm" className="mt-4 border-border/50" onClick={generateAiProduct} disabled={aiLoading}>
+            {aiLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+            Regenerate
+          </Button>
+        </div>
+      ) : (
+        <div className="bg-card rounded-xl border border-dashed border-primary/30 p-6 mb-6 text-center">
+          <Sparkles className="h-8 w-8 text-primary mx-auto mb-3" />
+          <h3 className="font-semibold text-card-foreground mb-1">Generate AI Product Idea</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Let AI analyze this tweet and suggest a product name, description, features, and competitor gaps.
+          </p>
+          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground" onClick={generateAiProduct} disabled={aiLoading}>
+            {aiLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4 mr-2" /> Generate with AI
+              </>
+            )}
+          </Button>
         </div>
       )}
 
