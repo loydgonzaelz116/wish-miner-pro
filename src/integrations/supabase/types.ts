@@ -14,7 +14,108 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      saved_ideas: {
+        Row: {
+          ai_description: string | null
+          ai_product_name: string | null
+          author: string | null
+          built_status: boolean | null
+          cluster: string | null
+          competitor_gaps: string[] | null
+          created_at: string
+          date: string | null
+          demand_level: string | null
+          handle: string | null
+          id: string
+          likes: number | null
+          notes: string | null
+          priority_score: number | null
+          quote_suggestions: string[] | null
+          replies: number | null
+          retweets: number | null
+          revenue_price: number | null
+          revenue_sales: number | null
+          updated_at: string
+          user_id: string
+          wish_text: string
+        }
+        Insert: {
+          ai_description?: string | null
+          ai_product_name?: string | null
+          author?: string | null
+          built_status?: boolean | null
+          cluster?: string | null
+          competitor_gaps?: string[] | null
+          created_at?: string
+          date?: string | null
+          demand_level?: string | null
+          handle?: string | null
+          id?: string
+          likes?: number | null
+          notes?: string | null
+          priority_score?: number | null
+          quote_suggestions?: string[] | null
+          replies?: number | null
+          retweets?: number | null
+          revenue_price?: number | null
+          revenue_sales?: number | null
+          updated_at?: string
+          user_id: string
+          wish_text: string
+        }
+        Update: {
+          ai_description?: string | null
+          ai_product_name?: string | null
+          author?: string | null
+          built_status?: boolean | null
+          cluster?: string | null
+          competitor_gaps?: string[] | null
+          created_at?: string
+          date?: string | null
+          demand_level?: string | null
+          handle?: string | null
+          id?: string
+          likes?: number | null
+          notes?: string | null
+          priority_score?: number | null
+          quote_suggestions?: string[] | null
+          replies?: number | null
+          retweets?: number | null
+          revenue_price?: number | null
+          revenue_sales?: number | null
+          updated_at?: string
+          user_id?: string
+          wish_text?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
