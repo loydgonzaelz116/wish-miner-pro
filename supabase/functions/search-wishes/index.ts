@@ -68,6 +68,7 @@ Deno.serve(async (req) => {
     }
 
     const runData = await startRes.json();
+    console.log("Run response:", JSON.stringify(runData).substring(0, 500));
     const runId = runData?.data?.id;
     const datasetId = runData?.data?.defaultDatasetId;
 
