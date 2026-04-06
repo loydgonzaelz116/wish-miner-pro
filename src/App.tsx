@@ -13,6 +13,7 @@ import IdeaDetail from "./pages/IdeaDetail";
 import MyIdeas from "./pages/MyIdeas";
 import Exports from "./pages/Exports";
 import SettingsPage from "./pages/SettingsPage";
+import Pricing from "./pages/Pricing";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/pricing" element={<Pricing />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>
               <Route index element={<DashboardHome />} />
               <Route path="search" element={<DashboardHome />} />
