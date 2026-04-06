@@ -43,9 +43,10 @@ Deno.serve(async (req) => {
       .order("like_count", { ascending: false });
 
     if (cached && cached.length > 0) {
-      // Return cached without counting against limit
-      const usage = await getUsage(supabase, req);
-      return json({ posts: cached.map(formatPost), fromCache: true, searchesRemaining: FREE_TIER_LIMIT - (usage?.search_count || 0) });
+      const userId = await getUserId(req);
+      const isPaid = userId ? await isUserPaid(supabase, userId) : false;
+      const usage = userId ? await getUsageForUser(supabase, userId) : null;
+      return json({ posts: cached.map(formatPost), fromCache: true, searchesRemaining: isPaid ? 999 : FREE_TIER_LIMIT - (usage?.search_count || 0), isPaid });
     }
 
     // For non-cached searches, check rate limit (but not for poll actions)
@@ -55,21 +56,25 @@ Deno.serve(async (req) => {
         return json({ error: "Authentication required" }, 401);
       }
 
-      const usage = await getUsageForUser(supabase, userId);
-      const currentCount = usage?.search_count || 0;
+      const isPaid = await isUserPaid(supabase, userId);
 
-      if (currentCount >= FREE_TIER_LIMIT) {
-        return json({
-          error: "Daily search limit reached",
-          limitReached: true,
-          searchesRemaining: 0,
-          limit: FREE_TIER_LIMIT,
-          posts: [],
-        }, 429);
+      if (!isPaid) {
+        const usage = await getUsageForUser(supabase, userId);
+        const currentCount = usage?.search_count || 0;
+
+        if (currentCount >= FREE_TIER_LIMIT) {
+          return json({
+            error: "Daily search limit reached",
+            limitReached: true,
+            searchesRemaining: 0,
+            limit: FREE_TIER_LIMIT,
+            posts: [],
+          }, 429);
+        }
+
+        // Increment usage only for free users
+        await incrementUsage(supabase, userId, currentCount, !!usage);
       }
-
-      // Increment usage
-      await incrementUsage(supabase, userId, currentCount, !!usage);
     }
 
     const apifyToken = Deno.env.get("APIFY_API_TOKEN");
@@ -115,7 +120,8 @@ Deno.serve(async (req) => {
     }
 
     const userId = await getUserId(req);
-    const remaining = userId ? await getRemainingSearches(supabase, userId) : FREE_TIER_LIMIT;
+    const isPaidUser = userId ? await isUserPaid(supabase, userId) : false;
+    const remaining = isPaidUser ? 999 : (userId ? await getRemainingSearches(supabase, userId) : FREE_TIER_LIMIT);
 
     return json({
       status: "running",
