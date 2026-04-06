@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { usePlanTier } from "@/hooks/usePlanTier";
 import { fetchSavedIdeas } from "@/lib/savedIdeas";
+import { exportFormattedSummary } from "@/lib/exportSummaryDoc";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
@@ -58,15 +59,20 @@ const Exports = () => {
 
     if (!user) return;
 
-    if (format === "csv") {
+    if (format === "csv" || format === "doc") {
       try {
         const ideas = await fetchSavedIdeas(user.id);
         if (!ideas || ideas.length === 0) {
           toast.error("No saved ideas to export");
           return;
         }
-        exportToCSV(ideas);
-        toast.success(`Exported ${ideas.length} ideas to CSV`);
+        if (format === "csv") {
+          exportToCSV(ideas);
+          toast.success(`Exported ${ideas.length} ideas to CSV`);
+        } else {
+          await exportFormattedSummary(ideas);
+          toast.success(`Exported ${ideas.length} ideas to DOCX`);
+        }
       } catch {
         toast.error("Failed to export ideas");
       }
