@@ -48,20 +48,22 @@ Deno.serve(async (req) => {
 
     // Step 1: Start actor run
     const startUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/runs?token=${apifyToken}`;
+    const inputBody = {
+      searchTerms: [query],
+      maxItems,
+      sort: "Top",
+      tweetLanguage: "en",
+    };
+    console.log("Starting Apify run with input:", JSON.stringify(inputBody));
     const startRes = await fetch(startUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        searchTerms: [query],
-        maxItems,
-        sort: "Top",
-        tweetLanguage: "en",
-      }),
+      body: JSON.stringify(inputBody),
     });
 
     if (!startRes.ok) {
       const errText = await startRes.text();
-      console.error("Apify start error:", errText);
+      console.error("Apify start error:", startRes.status, errText);
       return await fallbackToStale(supabase, queryHash, maxItems, errText);
     }
 
