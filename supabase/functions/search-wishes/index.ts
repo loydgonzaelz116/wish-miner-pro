@@ -24,13 +24,12 @@ Deno.serve(async (req) => {
 
     const queryHash = await hashQuery(query);
 
-    // Create service-role client for cache operations
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Check cache (posts fetched within last 24 hours)
+    // Check cache
     const cacheThreshold = new Date(Date.now() - CACHE_HOURS * 60 * 60 * 1000).toISOString();
     const { data: cached } = await supabase
       .from("x_posts")
@@ -40,19 +39,13 @@ Deno.serve(async (req) => {
       .order("like_count", { ascending: false });
 
     if (cached && cached.length > 0) {
-      return new Response(
-        JSON.stringify({ posts: cached.map(formatPost), fromCache: true }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return json({ posts: cached.map(formatPost), fromCache: true });
     }
 
-    // Call Apify API
+    // Call Apify
     const apifyToken = Deno.env.get("APIFY_API_TOKEN");
     if (!apifyToken) {
-      return new Response(JSON.stringify({ error: "APIFY_API_TOKEN not configured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return json({ error: "APIFY_API_TOKEN not configured" }, 500);
     }
 
     const runUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items?token=${apifyToken}`;
@@ -62,53 +55,40 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         searchTerms: [query],
-        searchMode: "live",
-        maxItems,
-        lang: "en",
         sort: "Top",
         tweetLanguage: "en",
+        maxItems,
       }),
     });
 
     if (!apifyResponse.ok) {
       const errText = await apifyResponse.text();
       console.error("Apify error:", errText);
-
-      // Fallback to any cached data (even stale)
-      const { data: stale } = await supabase
-        .from("x_posts")
-        .select("*")
-        .eq("query_hash", queryHash)
-        .order("like_count", { ascending: false })
-        .limit(maxItems);
-
-      if (stale && stale.length > 0) {
-        return new Response(
-          JSON.stringify({ posts: stale.map(formatPost), fromCache: true, stale: true }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      return new Response(JSON.stringify({ error: "Failed to fetch from Apify", details: errText }), {
-        status: 502,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return await fallbackToStale(supabase, queryHash, maxItems, errText);
     }
 
     const tweets = await apifyResponse.json();
 
-    // Clear old cache for this query
+    // Filter out noResults entries and map fields
+    const validTweets = (tweets as any[]).filter((t: any) => !t.noResults && (t.full_text || t.text));
+
+    if (validTweets.length === 0) {
+      // No real results — try stale cache
+      return await fallbackToStale(supabase, queryHash, maxItems, "No results from Apify");
+    }
+
+    // Clear old cache
     await supabase.from("x_posts").delete().eq("query_hash", queryHash);
 
-    // Insert new results
-    const rows = (tweets as any[]).map((t: any) => ({
+    // Map Apify tweet fields to our schema
+    const rows = validTweets.map((t: any) => ({
       query_hash: queryHash,
       post_text: t.full_text || t.text || "",
-      author: t.user?.screen_name || t.author?.userName || "",
-      like_count: t.favorite_count ?? t.likeCount ?? 0,
+      author: t.user?.screen_name || t.author?.userName || t.author?.name || "",
+      like_count: t.favorite_count ?? t.likeCount ?? t.favoriteCount ?? 0,
       reply_count: t.reply_count ?? t.replyCount ?? 0,
       quote_count: t.quote_count ?? t.quoteCount ?? 0,
-      post_timestamp: t.created_at || t.createdAt || null,
+      post_timestamp: t.created_at || t.createdAt || t.timestamp || null,
       raw_data: t,
     }));
 
@@ -116,18 +96,33 @@ Deno.serve(async (req) => {
       await supabase.from("x_posts").insert(rows);
     }
 
-    return new Response(
-      JSON.stringify({ posts: rows.map(formatPost), fromCache: false }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return json({ posts: rows.map(formatPost), fromCache: false });
   } catch (err) {
     console.error("search-wishes error:", err);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ error: "Internal server error" }, 500);
   }
 });
+
+async function fallbackToStale(supabase: any, queryHash: string, maxItems: number, reason: string) {
+  const { data: stale } = await supabase
+    .from("x_posts")
+    .select("*")
+    .eq("query_hash", queryHash)
+    .order("like_count", { ascending: false })
+    .limit(maxItems);
+
+  if (stale && stale.length > 0) {
+    return json({ posts: stale.map(formatPost), fromCache: true, stale: true });
+  }
+  return json({ error: "No results found", details: reason, posts: [] }, 200);
+}
+
+function json(data: any, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
 
 function formatPost(row: any) {
   return {
