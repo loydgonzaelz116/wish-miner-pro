@@ -14,7 +14,7 @@ import { useSearchWishes } from "@/hooks/useSearchWishes";
 const DashboardHome = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { wishes: liveWishes, setWishes: setLiveWishes, loading, error, fromCache, hasSearched, search } = useSearchWishes();
+  const { wishes: liveWishes, setWishes: setLiveWishes, loading, statusMessage, error, fromCache, hasSearched, search } = useSearchWishes();
 
   // Show mock wishes before first search, live wishes after
   const displayWishes = hasSearched ? liveWishes : mockWishes.map(w => ({ ...w }));
