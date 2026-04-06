@@ -66,7 +66,7 @@ const DashboardHome = () => {
       {error && !loading && (
         <div className="text-center py-8">
           <p className="text-sm text-destructive">{error}</p>
-          <p className="text-xs text-muted-foreground mt-1">Showing mock data below</p>
+          <p className="text-xs text-muted-foreground mt-1">The Apify actor couldn't find results. Try a different query or check your Apify account settings.</p>
         </div>
       )}
 
